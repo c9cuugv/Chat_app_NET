@@ -116,6 +116,7 @@ function setupSignalR() {
         .build();
 
     connection.on("ReceiveMessage", (message) => {
+        console.log(`Recv: ${message.roomId}, Active: ${activeRoomId}`);
         if (message.roomId === activeRoomId) {
             appendMessage(message);
             connection.invoke("MarkRoomAsRead", activeRoomId);
@@ -137,7 +138,9 @@ function setupSignalR() {
         }
     });
 
-    connection.start().catch(err => console.error(err));
+    connection.start()
+        .then(() => console.log("SignalR Connected"))
+        .catch(err => console.error(err));
 }
 
 async function loadUsers() {

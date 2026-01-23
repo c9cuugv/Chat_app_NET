@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.Extensions.Logging;
 using ChatApp.Core.Entities;
 using ChatApp.Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -14,14 +15,16 @@ public class ChatHub : Hub
     private readonly IUserRepository _userRepository;
     private readonly IPresenceService _presenceService;
     private readonly INotificationService _notificationService;
+    private readonly ILogger<ChatHub> _logger;
 
-    public ChatHub(IMessageRepository messageRepository, IChatRoomRepository roomRepository, IUserRepository userRepository, IPresenceService presenceService, INotificationService notificationService)
+    public ChatHub(IMessageRepository messageRepository, IChatRoomRepository roomRepository, IUserRepository userRepository, IPresenceService presenceService, INotificationService notificationService, ILogger<ChatHub> logger)
     {
         _messageRepository = messageRepository;
         _roomRepository = roomRepository;
         _userRepository = userRepository;
         _presenceService = presenceService;
         _notificationService = notificationService;
+        _logger = logger;
     }
 
     public async Task JoinRoom(int roomId)
@@ -51,6 +54,8 @@ public class ChatHub : Hub
         var userId = int.Parse(Context.UserIdentifier!);
         var username = Context.User!.Identity!.Name;
 
+        _logger.LogInformation("SendMessage: User {UserId} ({Username}) sending to Room {RoomId}", userId, username, roomId);
+
         // Save to DB
         var message = new Message
         {
@@ -64,7 +69,11 @@ public class ChatHub : Hub
 
         // Get participants to notify
         var room = await _roomRepository.GetByIdAsync(roomId);
-        if (room == null) return;
+        if (room == null) 
+        {
+            _logger.LogWarning("SendMessage: Room {RoomId} not found", roomId);
+            return;
+        }
 
         var messageData = new 
         {
@@ -79,6 +88,7 @@ public class ChatHub : Hub
         // Send to each participant
         foreach (var participant in room.Participants)
         {
+            _logger.LogInformation("SendMessage: Sending to User {ParticipantId}", participant.UserId);
             await Clients.User(participant.UserId.ToString()).SendAsync("ReceiveMessage", messageData);
         }
 
@@ -96,6 +106,8 @@ public class ChatHub : Hub
     {
         var userIdString = Context.UserIdentifier;
         if (userIdString == null) return;
+
+        _logger.LogInformation("OnConnectedAsync: User {UserId} connected with ConnectionId {ConnectionId}", userIdString, Context.ConnectionId);
 
         var userId = int.Parse(userIdString);
         await _presenceService.UserConnectedAsync(userId, Context.ConnectionId);

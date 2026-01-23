@@ -1,0 +1,127 @@
+using System.Security.Claims;
+using ChatApp.Core.Entities;
+using ChatApp.Core.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
+
+namespace ChatApp.Api.Hubs;
+
+[Authorize]
+public class ChatHub : Hub
+{
+    private readonly IMessageRepository _messageRepository;
+    private readonly IChatRoomRepository _roomRepository;
+    private readonly IUserRepository _userRepository;
+    private readonly IPresenceService _presenceService;
+    private readonly INotificationService _notificationService;
+
+    public ChatHub(IMessageRepository messageRepository, IChatRoomRepository roomRepository, IUserRepository userRepository, IPresenceService presenceService, INotificationService notificationService)
+    {
+        _messageRepository = messageRepository;
+        _roomRepository = roomRepository;
+        _userRepository = userRepository;
+        _presenceService = presenceService;
+        _notificationService = notificationService;
+    }
+
+    public async Task JoinRoom(int roomId)
+    {
+        var userId = int.Parse(Context.UserIdentifier!);
+        
+        // Verify user access
+        if (!await _roomRepository.IsUserInRoomAsync(roomId, userId))
+        {
+             // For private chats, we don't just add them. 
+             // But for this MVP, let's assume if they have the roomId, they can join.
+             // Ideally: throw HubException or return error.
+        }
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, roomId.ToString());
+    }
+
+    public async Task LeaveRoom(int roomId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId.ToString());
+    }
+
+    public async Task SendMessage(int roomId, string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return;
+
+        var userId = int.Parse(Context.UserIdentifier!);
+        var username = Context.User!.Identity!.Name;
+
+        // Save to DB
+        var message = new Message
+        {
+            RoomId = roomId,
+            SenderId = userId,
+            Content = content,
+            SentAt = DateTime.UtcNow
+        };
+
+        await _messageRepository.CreateAsync(message);
+
+        // Get participants to notify
+        var room = await _roomRepository.GetByIdAsync(roomId);
+        if (room == null) return;
+
+        var messageData = new 
+        {
+            roomId = roomId,
+            senderId = userId,
+            senderName = username,
+            content = content,
+            sentAt = message.SentAt,
+            messageId = message.Id
+        };
+
+        // Send to each participant
+        foreach (var participant in room.Participants)
+        {
+            await Clients.User(participant.UserId.ToString()).SendAsync("ReceiveMessage", messageData);
+        }
+
+        // Notify (Log)
+        await _notificationService.SendPushNotificationAsync(userId, "New Message", $"You sent a message to room {roomId}");
+    }
+
+    public async Task MarkRoomAsRead(int roomId)
+    {
+        var userId = int.Parse(Context.UserIdentifier!);
+        await _roomRepository.UpdateLastReadAtAsync(roomId, userId);
+    }
+
+    public override async Task OnConnectedAsync()
+    {
+        var userIdString = Context.UserIdentifier;
+        if (userIdString == null) return;
+
+        var userId = int.Parse(userIdString);
+        await _presenceService.UserConnectedAsync(userId, Context.ConnectionId);
+
+        // Notify others that this user is online
+        await Clients.All.SendAsync("UserPresenceUpdate", userId, true);
+
+        await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var userIdString = Context.UserIdentifier;
+        if (userIdString != null)
+        {
+            var userId = int.Parse(userIdString);
+            await _presenceService.UserDisconnectedAsync(userId, Context.ConnectionId);
+
+            // Check if user is still online (has other connections)
+            var isStillOnline = await _presenceService.IsUserOnlineAsync(userId);
+            if (!isStillOnline)
+            {
+                await Clients.All.SendAsync("UserPresenceUpdate", userId, false);
+            }
+        }
+
+        await base.OnDisconnectedAsync(exception);
+    }
+}

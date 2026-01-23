@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatApp - Real-Time Messaging</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Auth Section -->
+        <div id="auth-container" class="fade-in">
+            <div class="auth-card">
+                <h1>Welcome to ChatApp</h1>
+                <div class="tabs">
+                    <button id="tab-login" class="active">Login</button>
+                    <button id="tab-register">Register</button>
+                </div>
+                
+                <form id="login-form">
+                    <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
+                    <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
+                    <button type="submit" class="btn-primary">Login</button>
+                </form>
+
+                <form id="register-form" class="hidden">
+                    <input type="text" id="reg-username" placeholder="Username" required autocomplete="username">
+                    <input type="email" id="reg-email" placeholder="Email" required autocomplete="email">
+                    <input type="password" id="reg-password" placeholder="Password" required autocomplete="new-password">
+                    <button type="submit" class="btn-primary">Register</button>
+                </form>
+                
+                <p id="auth-error" class="error-text"></p>
+            </div>
+        </div>
+
+        <!-- Chat Section -->
+        <div id="chat-container" class="hidden">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <div class="user-info">
+                        <span id="current-username"></span>
+                        <span class="status-dot online"></span>
+                    </div>
+                    <button id="logout-btn" class="btn-icon">Logout</button>
+                </div>
+                
+                <div class="section-title">Online Users</div>
+                <div id="users-list" class="user-list">
+                    <!-- Users will be populated here -->
+                </div>
+
+                <div class="section-title">Channels</div>
+                <div id="rooms-list" class="room-list">
+                    <!-- Rooms will be populated here -->
+                </div>
+            </aside>
+
+            <main class="chat-area">
+                <div id="no-chat-selected" class="empty-state">
+                    <p>Select a user to start chatting</p>
+                </div>
+
+                <div id="active-chat" class="hidden">
+                    <header class="chat-header">
+                        <h2 id="chat-with-name">Username</h2>
+                        <span id="chat-status" class="status-text">Online</span>
+                    </header>
+                    
+                    <div id="messages-container" class="messages-list">
+                        <!-- Messages populate here -->
+                    </div>
+
+                    <form id="message-form" class="input-area">
+                        <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+                        <button type="submit" id="send-btn">Send</button>
+                    </form>
+                </div>
+            </main>
+        </div>
+    </div>
+    <script src="chat.js"></script>
+</body>
+</html>

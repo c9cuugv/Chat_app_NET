@@ -61,9 +61,10 @@ builder.Services.AddScoped<IChatRoomRepository, ChatRoomRepository>();
 builder.Services.AddSingleton<IPresenceService, PresenceService>();
 
 // Redis
+var redisConnectionString = builder.Configuration.GetSection("Redis:ConnectionString").Value ?? "localhost:6379";
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp => 
 {
-    var configuration = ConfigurationOptions.Parse("localhost:6379");
+    var configuration = ConfigurationOptions.Parse(redisConnectionString);
     configuration.AbortOnConnectFail = false;
     return ConnectionMultiplexer.Connect(configuration);
 });
@@ -76,7 +77,7 @@ builder.Services.AddHealthChecks()
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(options => 
     {
-        options.Configuration = ConfigurationOptions.Parse("localhost:6379");
+        options.Configuration = ConfigurationOptions.Parse(redisConnectionString);
         options.Configuration.AbortOnConnectFail = false;
     });
 

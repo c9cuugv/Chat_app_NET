@@ -3,6 +3,7 @@
     <Project Path="src/ChatApp.Api/ChatApp.Api.csproj" />
     <Project Path="src/ChatApp.Core/ChatApp.Core.csproj" />
     <Project Path="src/ChatApp.Infrastructure/ChatApp.Infrastructure.csproj" />
+    <Project Path="src/ChatApp.Mobile/ChatApp.Mobile.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ChatApp.UnitTests/ChatApp.UnitTests.csproj" />

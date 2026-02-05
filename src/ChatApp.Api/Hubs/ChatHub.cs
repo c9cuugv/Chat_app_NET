@@ -85,12 +85,9 @@ public class ChatHub : Hub
             messageId = message.Id
         };
 
-        // Send to each participant
-        foreach (var participant in room.Participants)
-        {
-            _logger.LogInformation("SendMessage: Sending to User {ParticipantId}", participant.UserId);
-            await Clients.User(participant.UserId.ToString()).SendAsync("ReceiveMessage", messageData);
-        }
+        // Send to group
+        _logger.LogInformation("SendMessage: Sending to Group {RoomId}", roomId);
+        await Clients.Group(roomId.ToString()).SendAsync("ReceiveMessage", messageData);
 
         // Notify (Log)
         await _notificationService.SendPushNotificationAsync(userId, "New Message", $"You sent a message to room {roomId}");

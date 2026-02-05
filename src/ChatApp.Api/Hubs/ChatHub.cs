@@ -34,9 +34,7 @@ public class ChatHub : Hub
         // Verify user access
         if (!await _roomRepository.IsUserInRoomAsync(roomId, userId))
         {
-             // For private chats, we don't just add them. 
-             // But for this MVP, let's assume if they have the roomId, they can join.
-             // Ideally: throw HubException or return error.
+            throw new HubException("User is not a member of this room.");
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, roomId.ToString());

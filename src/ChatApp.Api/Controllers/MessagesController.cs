@@ -23,9 +23,16 @@ public class MessagesController : ControllerBase
     [HttpGet("room/{roomId}")]
     public async Task<ActionResult<IEnumerable<Message>>> GetRoomMessages(int roomId)
     {
-        // Check if user is in room (optional but recommended)
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-        if (!await _roomRepository.IsUserInRoomAsync(roomId, userId)) return Forbid();
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+        if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+        {
+            return Unauthorized();
+        }
+
+        if (!await _roomRepository.IsUserInRoomAsync(roomId, userId))
+        {
+            return Forbid();
+        }
 
         var messages = await _messageRepository.GetRecentMessagesAsync(roomId);
         return Ok(messages);

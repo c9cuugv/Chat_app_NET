@@ -53,7 +53,8 @@ public class AuthService : IAuthService
     private string GenerateJwtToken(User user)
     {
         var jwtSettings = _configuration.GetSection("JwtSettings");
-        var secretKey = jwtSettings["Secret"] ?? "super_secret_key_default_value_need_to_be_long_enough";
+        var secretKey = jwtSettings["Secret"]
+            ?? throw new InvalidOperationException("JwtSettings:Secret is not configured.");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
@@ -68,7 +69,7 @@ public class AuthService : IAuthService
             issuer: jwtSettings["Issuer"] ?? "ChatApp",
             audience: jwtSettings["Audience"] ?? "ChatAppClient",
             claims: claims,
-            expires: DateTime.Now.AddDays(1),
+            expires: DateTime.UtcNow.AddHours(2), // Reduced from 24h to 2h
             signingCredentials: creds
         );
 

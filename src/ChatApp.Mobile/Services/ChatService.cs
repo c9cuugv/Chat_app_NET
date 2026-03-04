@@ -5,11 +5,11 @@ namespace ChatApp.Mobile.Services;
 public class ChatService
 {
     private HubConnection? _hubConnection;
-    private readonly AuthService _authService;
+    private readonly RemoteAuthService _authService;
 
     public event Action<int, int, string, string>? OnMessageReceived;
 
-    public ChatService(AuthService authService)
+    public ChatService(RemoteAuthService authService)
     {
         _authService = authService;
     }
@@ -19,7 +19,7 @@ public class ChatService
         var token = await _authService.GetTokenAsync();
         if (string.IsNullOrEmpty(token)) return;
 
-        var baseUrl = AuthService.BaseUrl;
+        var baseUrl = RemoteAuthService.BaseUrl;
 
         _hubConnection = new HubConnectionBuilder()
             .WithUrl($"{baseUrl}/chatHub", options =>

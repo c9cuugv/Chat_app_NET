@@ -4,6 +4,20 @@ let currentUser = null;
 let connection = null;
 let activeRoomId = null;
 
+// Avatar color palette
+const avatarColors = [
+    'avatar-color-0', 'avatar-color-1', 'avatar-color-2',
+    'avatar-color-3', 'avatar-color-4', 'avatar-color-5'
+];
+
+function getAvatarColor(id) {
+    return avatarColors[id % avatarColors.length];
+}
+
+function getInitial(name) {
+    return (name || '?').charAt(0).toUpperCase();
+}
+
 // DOM Elements
 const authContainer = document.getElementById('auth-container');
 const chatContainer = document.getElementById('chat-container');
@@ -12,6 +26,9 @@ const registerForm = document.getElementById('register-form');
 const authError = document.getElementById('auth-error');
 const tabLogin = document.getElementById('tab-login');
 const tabRegister = document.getElementById('tab-register');
+const tabIndicator = document.querySelector('.tab-indicator');
+const authTitle = document.getElementById('auth-title-text');
+const authSubtitle = document.getElementById('auth-subtitle-text');
 const usersList = document.getElementById('users-list');
 const messagesContainer = document.getElementById('messages-container');
 const messageForm = document.getElementById('message-form');
@@ -24,6 +41,9 @@ tabLogin.onclick = () => {
     tabRegister.classList.remove('active');
     loginForm.classList.remove('hidden');
     registerForm.classList.add('hidden');
+    tabIndicator.style.transform = 'translateX(0)';
+    authTitle.textContent = 'Welcome back';
+    authSubtitle.textContent = 'Sign in to continue your conversations';
 };
 
 tabRegister.onclick = () => {
@@ -31,6 +51,9 @@ tabRegister.onclick = () => {
     tabLogin.classList.remove('active');
     registerForm.classList.remove('hidden');
     loginForm.classList.add('hidden');
+    tabIndicator.style.transform = 'translateX(100%)';
+    authTitle.textContent = 'Join Converso';
+    authSubtitle.textContent = 'Create an account to start talking';
 };
 
 // Auth Functions
@@ -49,7 +72,7 @@ async function login(email, password) {
         localStorage.setItem('chat_token', token);
         initChat();
     } catch (err) {
-        authError.innerText = err.message;
+        authError.textContent = err.message;
         authError.style.color = 'var(--error)';
     }
 }
@@ -64,7 +87,6 @@ async function register(username, email, password) {
 
         const data = await response.json();
         if (!response.ok) {
-            // Check for validation errors (ModelState)
             let msg = data.message || 'Registration failed';
             if (data.errors) {
                 msg = Object.values(data.errors).flat().join(', ');
@@ -73,12 +95,11 @@ async function register(username, email, password) {
         }
 
         tabLogin.click();
-        authError.innerText = 'Registration successful! Please login.';
+        authError.textContent = 'Account created! Sign in to get started.';
         authError.style.color = 'var(--success)';
-        // Clear registration form
         registerForm.reset();
     } catch (err) {
-        authError.innerText = err.message;
+        authError.textContent = err.message;
         authError.style.color = 'var(--error)';
     }
 }
@@ -93,7 +114,8 @@ async function initChat() {
         if (!response.ok) throw new Error('Unauthorized');
 
         currentUser = await response.json();
-        document.getElementById('current-username').innerText = currentUser.username;
+        document.getElementById('current-username').textContent = currentUser.username;
+        document.getElementById('current-username-initial').textContent = getInitial(currentUser.username);
 
         authContainer.classList.add('hidden');
         chatContainer.classList.remove('hidden');
@@ -116,16 +138,13 @@ function setupSignalR() {
         .build();
 
     connection.on("ReceiveMessage", (message) => {
-        console.log(`Recv: ${message.roomId}, Active: ${activeRoomId}`);
         if (message.roomId === activeRoomId) {
             appendMessage(message);
             connection.invoke("MarkRoomAsRead", activeRoomId);
         } else {
-            // Highlight user in list if not active
             const userItem = document.querySelector(`[data-user-id="${message.senderId}"]`);
             if (userItem) {
                 userItem.classList.add('has-unread');
-                // Optionally move to top
                 usersList.prepend(userItem);
             }
         }
@@ -149,16 +168,35 @@ async function loadUsers() {
     });
     const users = await response.json();
 
-    usersList.innerHTML = users
+    usersList.innerHTML = '';
+    users
         .filter(u => u.id !== currentUser.id)
-        .map(u => `
-            <div class="user-item" onclick="startPrivateChat(${u.id}, '${u.username}')" data-user-id="${u.id}">
-                <div class="user-info">
-                    <span class="status-dot ${u.isOnline ? 'online' : 'offline'}"></span>
-                    <span>${u.username}</span>
-                </div>
-            </div>
-        `).join('');
+        .forEach(u => {
+            const item = document.createElement('div');
+            item.className = 'user-item';
+            item.dataset.userId = u.id;
+            item.addEventListener('click', () => startPrivateChat(u.id, u.username));
+
+            const avatar = document.createElement('div');
+            avatar.className = `user-avatar ${getAvatarColor(u.id)}`;
+            avatar.textContent = getInitial(u.username);
+
+            const dot = document.createElement('span');
+            dot.className = `status-dot ${u.isOnline ? 'online' : 'offline'}`;
+            avatar.appendChild(dot);
+
+            const info = document.createElement('div');
+            info.className = 'user-item-info';
+
+            const name = document.createElement('span');
+            name.className = 'user-item-name';
+            name.textContent = u.username;
+
+            info.appendChild(name);
+            item.appendChild(avatar);
+            item.appendChild(info);
+            usersList.appendChild(item);
+        });
 }
 
 async function startPrivateChat(otherUserId, otherUsername) {
@@ -173,7 +211,13 @@ async function startPrivateChat(otherUserId, otherUsername) {
 
         document.getElementById('no-chat-selected').classList.add('hidden');
         document.getElementById('active-chat').classList.remove('hidden');
-        chatWithTitle.innerText = otherUsername;
+        chatWithTitle.textContent = otherUsername;
+
+        // Update chat avatar
+        const chatAvatar = document.getElementById('chat-avatar-initial');
+        chatAvatar.textContent = getInitial(otherUsername);
+        chatAvatar.className = `chat-avatar ${getAvatarColor(otherUserId)}`;
+
         messagesContainer.innerHTML = '';
 
         // Load history
@@ -182,7 +226,7 @@ async function startPrivateChat(otherUserId, otherUsername) {
         });
         const messages = await messagesRes.json();
 
-        messages.reverse().forEach(appendMessage); // API returns recent first, we want chronological
+        messages.reverse().forEach(appendMessage);
 
         // Join the room in SignalR
         await connection.invoke("JoinRoom", activeRoomId);
@@ -206,10 +250,17 @@ function appendMessage(msg) {
     const msgEl = document.createElement('div');
     msgEl.className = `message ${isSent ? 'sent' : 'received'}`;
     const time = new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    msgEl.innerHTML = `
-        <div class="message-content">${msg.content}</div>
-        <span class="message-meta">${time}</span>
-    `;
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'message-content';
+    contentEl.textContent = msg.content; // textContent prevents XSS
+
+    const metaEl = document.createElement('span');
+    metaEl.className = 'message-meta';
+    metaEl.textContent = time;
+
+    msgEl.appendChild(contentEl);
+    msgEl.appendChild(metaEl);
     messagesContainer.appendChild(msgEl);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }

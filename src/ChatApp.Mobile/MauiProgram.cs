@@ -23,7 +23,7 @@ public static class MauiProgram
 #endif
 
         // Services
-        builder.Services.AddSingleton<AuthService>();
+        builder.Services.AddSingleton<RemoteAuthService>();
         builder.Services.AddSingleton<ChatService>();
 
         // ViewModels

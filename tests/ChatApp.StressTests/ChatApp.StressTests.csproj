@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Run scenarios sequentially to avoid port / DB conflicts -->
+    <RunSettingsFilePath>stress.runsettings</RunSettingsFilePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- xUnit — same version as UnitTests project -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk"                       Version="17.8.0" />
+    <PackageReference Include="xunit"                                         Version="2.6.3" />
+    <PackageReference Include="xunit.runner.visualstudio"                     Version="2.5.5">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector"                             Version="6.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+
+    <!-- NBomber for HTTP load scenarios — keep both on same major version -->
+    <PackageReference Include="NBomber"                                        Version="6.0.0" />
+    <PackageReference Include="NBomber.Http"                                   Version="6.0.0" />
+
+    <!-- SignalR client for WebSocket scenarios -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client"            Version="8.0.0" />
+
+    <!-- In-process test server -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing"               Version="8.0.0" />
+
+    <!-- Redis for direct inspection -->
+    <PackageReference Include="StackExchange.Redis"                            Version="2.7.4" />
+
+    <!-- EF Core + Npgsql for direct DB inspection — match Npgsql's requirement -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore"                  Version="8.0.2" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL"          Version="8.0.2" />
+
+    <!-- Readable assertions -->
+    <PackageReference Include="FluentAssertions"                               Version="6.12.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ChatApp.Api\ChatApp.Api.csproj" />
+    <ProjectReference Include="..\..\src\ChatApp.Core\ChatApp.Core.csproj" />
+    <ProjectReference Include="..\..\src\ChatApp.Infrastructure\ChatApp.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.StressTests.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="stress.runsettings">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

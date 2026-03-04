@@ -30,23 +30,11 @@ public class ChatRoomsController : ControllerBase
     public async Task<ActionResult<ChatRoom>> GetOrCreatePrivateRoom(int otherUserId)
     {
         var currentUserId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-        
-        var room = await _roomRepository.GetPrivateRoomAsync(currentUserId, otherUserId);
-        
-        if (room == null)
-        {
-            room = new ChatRoom
-            {
-                Name = $"Private Chat",
-                Type = "Private",
-                CreatedAt = DateTime.UtcNow
-            };
-            
-            room = await _roomRepository.CreateAsync(room);
-            await _roomRepository.AddUserToRoomAsync(room.Id, currentUserId);
-            await _roomRepository.AddUserToRoomAsync(room.Id, otherUserId);
-        }
-        
+
+        if (currentUserId == otherUserId)
+            return BadRequest(new { message = "Cannot create a chat room with yourself." });
+
+        var room = await _roomRepository.GetOrCreatePrivateRoomAsync(currentUserId, otherUserId);
         return Ok(room);
     }
 }

@@ -10,7 +10,7 @@ namespace ChatApp.Mobile.ViewModels;
 public partial class ChatViewModel : BaseViewModel
 {
     private readonly ChatService _chatService;
-    private readonly AuthService _authService;
+    private readonly RemoteAuthService _authService;
     private int _currentUserId;
 
     [ObservableProperty]
@@ -24,7 +24,7 @@ public partial class ChatViewModel : BaseViewModel
 
     public ObservableCollection<ChatMessageDisplay> Messages { get; } = new();
 
-    public ChatViewModel(ChatService chatService, AuthService authService)
+    public ChatViewModel(ChatService chatService, RemoteAuthService authService)
     {
         _chatService = chatService;
         _authService = authService;

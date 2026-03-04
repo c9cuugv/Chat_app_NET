@@ -47,7 +47,7 @@ public class ChatDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.RoomId).HasColumnName("roomid");
             entity.Property(e => e.SenderId).HasColumnName("senderid");
-            entity.Property(e => e.Content).HasColumnName("content");
+            entity.Property(e => e.Content).HasColumnName("content").HasMaxLength(2000);
             entity.Property(e => e.SentAt).HasColumnName("sentat");
             entity.Property(e => e.IsRead).HasColumnName("isread");
             

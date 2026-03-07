@@ -42,6 +42,7 @@ public class ChatRoomRepository : IChatRoomRepository
     public async Task<IEnumerable<ChatRoom>> GetUserRoomsAsync(int userId)
     {
         return await _context.ChatRooms
+            .Include(r => r.Participants)
             .Where(r => r.Participants.Any(p => p.UserId == userId))
             .ToListAsync();
     }
@@ -56,9 +57,56 @@ public class ChatRoomRepository : IChatRoomRepository
     {
         return await _context.ChatRooms
             .Where(r => r.Type == "Private")
-            .FirstOrDefaultAsync(r => 
-                r.Participants.Any(p => p.UserId == user1Id) && 
+            .FirstOrDefaultAsync(r =>
+                r.Participants.Any(p => p.UserId == user1Id) &&
                 r.Participants.Any(p => p.UserId == user2Id));
+    }
+
+    public async Task<ChatRoom> GetOrCreatePrivateRoomAsync(int user1Id, int user2Id)
+    {
+        // Use a serializable transaction to prevent the race condition where
+        // two concurrent requests both see no room and both create one.
+        await using var transaction = await _context.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable);
+
+        try
+        {
+            var existing = await _context.ChatRooms
+                .Where(r => r.Type == "Private")
+                .FirstOrDefaultAsync(r =>
+                    r.Participants.Any(p => p.UserId == user1Id) &&
+                    r.Participants.Any(p => p.UserId == user2Id));
+
+            if (existing != null)
+            {
+                await transaction.CommitAsync();
+                return existing;
+            }
+
+            var room = new ChatRoom
+            {
+                Name = "Private Chat",
+                Type = "Private",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.ChatRooms.Add(room);
+            await _context.SaveChangesAsync();
+
+            _context.RoomParticipants.AddRange(
+                new RoomParticipant { RoomId = room.Id, UserId = user1Id },
+                new RoomParticipant { RoomId = room.Id, UserId = user2Id }
+            );
+            await _context.SaveChangesAsync();
+
+            await transaction.CommitAsync();
+            return room;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task UpdateLastReadAtAsync(int roomId, int userId)

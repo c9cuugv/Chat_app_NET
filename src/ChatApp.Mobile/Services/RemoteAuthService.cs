@@ -3,16 +3,22 @@ using System.Text.Json;
 
 namespace ChatApp.Mobile.Services;
 
-public class AuthService
+/// <summary>
+/// Handles authentication against the remote ChatApp API and persists the
+/// resulting JWT token and user-id in secure device storage.
+/// </summary>
+public class RemoteAuthService
 {
     private readonly HttpClient _httpClient;
-    // Android emulator localhost is 10.0.2.2
-    public static string BaseUrl = DeviceInfo.Platform == DevicePlatform.Android ? "http://10.0.2.2:5200" : "http://localhost:5200";
 
-    public AuthService()
+    // Android emulator routes localhost through the host machine at 10.0.2.2
+    public static string BaseUrl = DeviceInfo.Platform == DevicePlatform.Android
+        ? "http://10.0.2.2:5200"
+        : "http://localhost:5200";
+
+    public RemoteAuthService()
     {
-        _httpClient = new HttpClient();
-        _httpClient.BaseAddress = new Uri(BaseUrl);
+        _httpClient = new HttpClient { BaseAddress = new Uri(BaseUrl) };
     }
 
     public async Task<(bool Success, string Message)> LoginAsync(string email, string password)
@@ -26,7 +32,6 @@ public class AuthService
                 var result = JsonSerializer.Deserialize<JsonElement>(content);
                 var token = result.GetProperty("token").GetString();
                 var userId = result.GetProperty("userId").GetInt32();
-                // var username = result.GetProperty("username").GetString();
 
                 if (token != null)
                 {
@@ -49,10 +54,8 @@ public class AuthService
         SecureStorage.Remove("user_id");
     }
 
-    public async Task<string?> GetTokenAsync()
-    {
-        return await SecureStorage.GetAsync("auth_token");
-    }
+    public async Task<string?> GetTokenAsync() =>
+        await SecureStorage.GetAsync("auth_token");
 
     public async Task<int> GetUserIdAsync()
     {

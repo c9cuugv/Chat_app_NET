@@ -1,5 +1,3 @@
-using System.Security.Claims;
-using Microsoft.Extensions.Logging;
 using ChatApp.Core.Entities;
 using ChatApp.Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -12,31 +10,26 @@ public class ChatHub : Hub
 {
     private readonly IMessageRepository _messageRepository;
     private readonly IChatRoomRepository _roomRepository;
-    private readonly IUserRepository _userRepository;
     private readonly IPresenceService _presenceService;
-    private readonly INotificationService _notificationService;
     private readonly ILogger<ChatHub> _logger;
 
-    public ChatHub(IMessageRepository messageRepository, IChatRoomRepository roomRepository, IUserRepository userRepository, IPresenceService presenceService, INotificationService notificationService, ILogger<ChatHub> logger)
+    private const int MaxMessageLength = 2000;
+
+    public ChatHub(IMessageRepository messageRepository, IChatRoomRepository roomRepository, IPresenceService presenceService, ILogger<ChatHub> logger)
     {
         _messageRepository = messageRepository;
         _roomRepository = roomRepository;
-        _userRepository = userRepository;
         _presenceService = presenceService;
-        _notificationService = notificationService;
         _logger = logger;
     }
 
     public async Task JoinRoom(int roomId)
     {
         var userId = int.Parse(Context.UserIdentifier!);
-        
-        // Verify user access
+
         if (!await _roomRepository.IsUserInRoomAsync(roomId, userId))
         {
-             // For private chats, we don't just add them. 
-             // But for this MVP, let's assume if they have the roomId, they can join.
-             // Ideally: throw HubException or return error.
+            throw new HubException("You are not a member of this room.");
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, roomId.ToString());
@@ -51,12 +44,22 @@ public class ChatHub : Hub
     {
         if (string.IsNullOrWhiteSpace(content)) return;
 
+        if (content.Length > MaxMessageLength)
+        {
+            throw new HubException($"Message exceeds maximum length of {MaxMessageLength} characters.");
+        }
+
         var userId = int.Parse(Context.UserIdentifier!);
+
+        if (!await _roomRepository.IsUserInRoomAsync(roomId, userId))
+        {
+            throw new HubException("You are not a member of this room.");
+        }
+
         var username = Context.User!.Identity!.Name;
 
-        _logger.LogInformation("SendMessage: User {UserId} ({Username}) sending to Room {RoomId}", userId, username, roomId);
+        _logger.LogInformation("SendMessage: User {UserId} sending to Room {RoomId}", userId, roomId);
 
-        // Save to DB
         var message = new Message
         {
             RoomId = roomId,
@@ -67,33 +70,17 @@ public class ChatHub : Hub
 
         await _messageRepository.CreateAsync(message);
 
-        // Get participants to notify
-        var room = await _roomRepository.GetByIdAsync(roomId);
-        if (room == null) 
+        var messageData = new
         {
-            _logger.LogWarning("SendMessage: Room {RoomId} not found", roomId);
-            return;
-        }
-
-        var messageData = new 
-        {
-            roomId = roomId,
+            roomId,
             senderId = userId,
             senderName = username,
-            content = content,
+            content,
             sentAt = message.SentAt,
             messageId = message.Id
         };
 
-        // Send to each participant
-        foreach (var participant in room.Participants)
-        {
-            _logger.LogInformation("SendMessage: Sending to User {ParticipantId}", participant.UserId);
-            await Clients.User(participant.UserId.ToString()).SendAsync("ReceiveMessage", messageData);
-        }
-
-        // Notify (Log)
-        await _notificationService.SendPushNotificationAsync(userId, "New Message", $"You sent a message to room {roomId}");
+        await Clients.Group(roomId.ToString()).SendAsync("ReceiveMessage", messageData);
     }
 
     public async Task MarkRoomAsRead(int roomId)
@@ -112,8 +99,7 @@ public class ChatHub : Hub
         var userId = int.Parse(userIdString);
         await _presenceService.UserConnectedAsync(userId, Context.ConnectionId);
 
-        // Notify others that this user is online
-        await Clients.All.SendAsync("UserPresenceUpdate", userId, true);
+        await Clients.Others.SendAsync("UserPresenceUpdate", userId, true);
 
         await base.OnConnectedAsync();
     }
@@ -126,11 +112,10 @@ public class ChatHub : Hub
             var userId = int.Parse(userIdString);
             await _presenceService.UserDisconnectedAsync(userId, Context.ConnectionId);
 
-            // Check if user is still online (has other connections)
             var isStillOnline = await _presenceService.IsUserOnlineAsync(userId);
             if (!isStillOnline)
             {
-                await Clients.All.SendAsync("UserPresenceUpdate", userId, false);
+                await Clients.Others.SendAsync("UserPresenceUpdate", userId, false);
             }
         }
 

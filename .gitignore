@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Development settings with secrets (DB credentials, JWT secret)
+appsettings.Development.json
+
 # User-specific files
 *.rsuser
 *.suo
@@ -480,3 +483,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Claude Code tool directories
+.claude/
+.clarke/

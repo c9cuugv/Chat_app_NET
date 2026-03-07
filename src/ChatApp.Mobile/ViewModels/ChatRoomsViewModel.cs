@@ -10,16 +10,16 @@ namespace ChatApp.Mobile.ViewModels;
 
 public partial class ChatRoomsViewModel : BaseViewModel
 {
-    private readonly AuthService _authService;
+    private readonly RemoteAuthService _authService;
     private readonly HttpClient _httpClient;
 
     public ObservableCollection<ChatRoom> Rooms { get; } = new();
 
-    public ChatRoomsViewModel(AuthService authService)
+    public ChatRoomsViewModel(RemoteAuthService authService)
     {
         _authService = authService;
         _httpClient = new HttpClient();
-        _httpClient.BaseAddress = new Uri(AuthService.BaseUrl);
+        _httpClient.BaseAddress = new Uri(RemoteAuthService.BaseUrl);
         Title = "Chat Rooms";
     }
 

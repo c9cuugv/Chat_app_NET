@@ -7,7 +7,7 @@ namespace ChatApp.Mobile.ViewModels;
 
 public partial class LoginViewModel : BaseViewModel
 {
-    private readonly AuthService _authService;
+    private readonly RemoteAuthService _authService;
 
     [ObservableProperty]
     string email;
@@ -18,7 +18,7 @@ public partial class LoginViewModel : BaseViewModel
     [ObservableProperty]
     string errorMessage;
 
-    public LoginViewModel(AuthService authService)
+    public LoginViewModel(RemoteAuthService authService)
     {
         _authService = authService;
     }

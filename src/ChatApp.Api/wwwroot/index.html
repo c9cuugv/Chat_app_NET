@@ -103,19 +103,34 @@
                     </div>
                 </div>
 
+                <!-- Connects section -->
                 <div class="sidebar-section">
-                    <div class="section-label">People</div>
+                    <div class="section-label">Connects</div>
+                    <button id="add-connect-btn" class="section-icon-btn" title="Add people">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                    </button>
                 </div>
-                <div id="users-list" class="user-list">
-                    <!-- Users will be populated here -->
+                <div id="connects-list" class="user-list"></div>
+
+                <!-- Pending invites -->
+                <div class="sidebar-section" id="pending-section" style="display:none">
+                    <div class="section-label">
+                        Invites
+                        <span id="pending-badge" class="badge"></span>
+                    </div>
+                    <button id="view-pending-btn" class="section-icon-btn" title="View invites">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 12l4-4-4-4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
                 </div>
 
+                <!-- Channels section -->
                 <div class="sidebar-section">
                     <div class="section-label">Channels</div>
+                    <button id="create-channel-btn" class="section-icon-btn" title="New channel">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                    </button>
                 </div>
-                <div id="rooms-list" class="room-list">
-                    <!-- Rooms will be populated here -->
-                </div>
+                <div id="rooms-list" class="room-list"></div>
             </aside>
 
             <main class="chat-area">
@@ -133,7 +148,7 @@
                         </svg>
                     </div>
                     <p class="empty-title">Pick a conversation</p>
-                    <p class="empty-hint">Choose someone from the sidebar to start talking</p>
+                    <p class="empty-hint">Choose a connect to start talking</p>
                 </div>
 
                 <div id="active-chat" class="hidden">
@@ -147,9 +162,7 @@
                         </div>
                     </header>
 
-                    <div id="messages-container" class="messages-list">
-                        <!-- Messages populate here -->
-                    </div>
+                    <div id="messages-container" class="messages-list"></div>
 
                     <form id="message-form" class="input-area">
                         <input type="text" id="message-input" placeholder="Write something..." autocomplete="off" maxlength="2000">
@@ -161,6 +174,61 @@
             </main>
         </div>
     </div>
+
+    <!-- Add People Modal -->
+    <div id="modal-add-people" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Add People</h3>
+                <button class="modal-close" data-modal="modal-add-people">&times;</button>
+            </div>
+            <div class="modal-search">
+                <input type="text" id="discover-search" placeholder="Search by username…" autocomplete="off">
+            </div>
+            <div id="discover-list" class="modal-list"></div>
+        </div>
+    </div>
+
+    <!-- Pending Invites Modal -->
+    <div id="modal-pending" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Invites</h3>
+                <button class="modal-close" data-modal="modal-pending">&times;</button>
+            </div>
+            <div class="modal-tabs">
+                <button class="modal-tab active" data-tab="received">Received</button>
+                <button class="modal-tab" data-tab="sent">Sent</button>
+            </div>
+            <div id="pending-received-list" class="modal-list"></div>
+            <div id="pending-sent-list" class="modal-list hidden"></div>
+        </div>
+    </div>
+
+    <!-- Create Channel Modal -->
+    <div id="modal-create-channel" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>New Channel</h3>
+                <button class="modal-close" data-modal="modal-create-channel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="field">
+                    <label for="channel-name-input">Channel name</label>
+                    <input type="text" id="channel-name-input" placeholder="e.g. team-general" maxlength="50" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>Add connects</label>
+                    <div id="channel-members-list" class="members-picker"></div>
+                </div>
+                <p id="create-channel-error" class="error-text"></p>
+                <button id="create-channel-submit" class="btn-primary" style="margin-top:0.5rem">
+                    <span>Create Channel</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="chat.js"></script>
 </body>
 </html>

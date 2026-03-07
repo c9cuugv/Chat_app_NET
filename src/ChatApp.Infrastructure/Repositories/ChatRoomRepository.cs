@@ -42,6 +42,7 @@ public class ChatRoomRepository : IChatRoomRepository
     public async Task<IEnumerable<ChatRoom>> GetUserRoomsAsync(int userId)
     {
         return await _context.ChatRooms
+            .Include(r => r.Participants)
             .Where(r => r.Participants.Any(p => p.UserId == userId))
             .ToListAsync();
     }

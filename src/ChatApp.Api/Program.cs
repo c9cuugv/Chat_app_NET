@@ -63,6 +63,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IMessageRepository, MessageRepository>();
 builder.Services.AddScoped<IChatRoomRepository, ChatRoomRepository>();
+builder.Services.AddScoped<IConnectionRepository, ConnectionRepository>();
 builder.Services.AddSingleton<IPresenceService, PresenceService>();
 
 // Redis
@@ -183,6 +184,18 @@ using (var scope = app.Services.CreateScope())
     {
         var context = services.GetRequiredService<ChatDbContext>();
         context.Database.EnsureCreated();
+
+        // Additive migration: create connectionrequests table if it doesn't exist
+        context.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS connectionrequests (
+                id SERIAL PRIMARY KEY,
+                senderid INT NOT NULL REFERENCES users(id),
+                receiverid INT NOT NULL REFERENCES users(id),
+                status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+                createdat TIMESTAMP NOT NULL DEFAULT NOW(),
+                UNIQUE (senderid, receiverid)
+            );
+            """);
     }
     catch (Exception ex)
     {

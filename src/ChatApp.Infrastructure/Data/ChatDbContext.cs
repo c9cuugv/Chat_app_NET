@@ -13,6 +13,7 @@ public class ChatDbContext : DbContext
     public DbSet<ChatRoom> ChatRooms { get; set; }
     public DbSet<Message> Messages { get; set; }
     public DbSet<RoomParticipant> RoomParticipants { get; set; }
+    public DbSet<ConnectionRequest> ConnectionRequests { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,6 +77,28 @@ public class ChatDbContext : DbContext
             entity.HasOne(rp => rp.User)
                 .WithMany()
                 .HasForeignKey(rp => rp.UserId);
+        });
+
+        modelBuilder.Entity<ConnectionRequest>(entity =>
+        {
+            entity.ToTable("connectionrequests");
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.SenderId).HasColumnName("senderid");
+            entity.Property(e => e.ReceiverId).HasColumnName("receiverid");
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20);
+            entity.Property(e => e.CreatedAt).HasColumnName("createdat");
+
+            entity.HasOne(e => e.Sender)
+                .WithMany()
+                .HasForeignKey(e => e.SenderId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Receiver)
+                .WithMany()
+                .HasForeignKey(e => e.ReceiverId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.SenderId, e.ReceiverId }).IsUnique();
         });
     }
 }

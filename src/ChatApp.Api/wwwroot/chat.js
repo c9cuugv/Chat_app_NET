@@ -1,4 +1,4 @@
-const API_URL = '';
+const API_URL = window.CHAT_API_URL || '';
 let token = localStorage.getItem('chat_token');
 let currentUser = null;
 let connection = null;

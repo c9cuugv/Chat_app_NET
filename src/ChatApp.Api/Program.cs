@@ -66,26 +66,44 @@ builder.Services.AddScoped<IChatRoomRepository, ChatRoomRepository>();
 builder.Services.AddScoped<IConnectionRepository, ConnectionRepository>();
 builder.Services.AddSingleton<IPresenceService, PresenceService>();
 
-// Redis
-var redisConnection = builder.Configuration["Redis:ConnectionString"]
-    ?? throw new InvalidOperationException("Redis:ConnectionString is missing. Set it in appsettings.Development.json or via environment variable.");
+// Redis (optional — falls back to in-memory SignalR for single-instance deploys)
+var redisConnection = builder.Configuration["Redis:ConnectionString"];
 
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+if (!string.IsNullOrEmpty(redisConnection))
 {
-    var configuration = ConfigurationOptions.Parse(redisConnection);
-    configuration.AbortOnConnectFail = false;
-    return ConnectionMultiplexer.Connect(configuration);
-});
+    builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+    {
+        var cfg = ConfigurationOptions.Parse(redisConnection);
+        cfg.AbortOnConnectFail = false;
+        return ConnectionMultiplexer.Connect(cfg);
+    });
+}
 
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<ChatDbContext>();
 
-builder.Services.AddSignalR()
-    .AddStackExchangeRedis(options =>
+var signalR = builder.Services.AddSignalR();
+if (!string.IsNullOrEmpty(redisConnection))
+{
+    signalR.AddStackExchangeRedis(options =>
     {
         options.Configuration = ConfigurationOptions.Parse(redisConnection);
         options.Configuration.AbortOnConnectFail = false;
     });
+}
+
+// CORS — allow frontend origin (Vercel) + local dev
+var allowedOrigins = builder.Configuration["Cors:AllowedOrigins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries)
+    ?? ["http://localhost:5173", "http://localhost:3000"];
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials());
+});
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -144,13 +162,11 @@ builder.Services.AddAuthentication(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
+app.UseCors("Frontend");
 
 // Security headers
 app.Use(async (context, next) =>

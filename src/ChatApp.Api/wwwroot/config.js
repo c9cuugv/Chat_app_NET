@@ -1,3 +1,2 @@
-// Set this to your deployed API URL after deploying to Render (or any host).
-// Leave empty string to use same-origin (when API serves the frontend directly).
-window.CHAT_API_URL = 'REPLACE_WITH_YOUR_API_URL';
+window.SUPABASE_URL = 'https://ockaxwmvcgouytycknny.supabase.co';
+window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ja2F4d212Y2dvdXl0eWNrbm55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNDMwOTcsImV4cCI6MjA4ODkxOTA5N30.EDlvRxlB6VoJzqAmuZaDx90b6hItyPX3F7cX6FMTRrs';

@@ -1,17 +1,22 @@
-const API_URL = window.CHAT_API_URL || '';
-let token = localStorage.getItem('chat_token');
+const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
 let currentUser = null;
-let connection = null;
 let activeRoomId = null;
-let allUsers = [];      // all users (for name resolution)
-let myConnects = [];    // accepted connections
+let allProfiles = [];
+let myConnects = [];
 
 // ── Avatar helpers ──────────────────────────────────────────────────────────
 const avatarColors = [
     'avatar-color-0', 'avatar-color-1', 'avatar-color-2',
     'avatar-color-3', 'avatar-color-4', 'avatar-color-5'
 ];
-function getAvatarColor(id) { return avatarColors[id % avatarColors.length]; }
+function getAvatarColor(id) {
+    if (!id) return avatarColors[0];
+    let hash = 0;
+    const str = String(id);
+    for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    return avatarColors[Math.abs(hash) % avatarColors.length];
+}
 function getInitial(name) { return (name || '?').charAt(0).toUpperCase(); }
 
 // ── DOM refs ────────────────────────────────────────────────────────────────
@@ -44,7 +49,6 @@ tabLogin.onclick = () => {
     authTitle.textContent = 'Welcome back';
     authSubtitle.textContent = 'Sign in to continue your conversations';
 };
-
 tabRegister.onclick = () => {
     tabRegister.classList.add('active');
     tabLogin.classList.remove('active');
@@ -58,16 +62,10 @@ tabRegister.onclick = () => {
 // ── Auth functions ──────────────────────────────────────────────────────────
 async function login(email, password) {
     try {
-        const res = await fetch(`${API_URL}/api/Auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || 'Login failed');
-        token = data.token;
-        localStorage.setItem('chat_token', token);
-        initChat();
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw new Error(error.message);
+        currentUser = data.user;
+        await initChat();
     } catch (err) {
         authError.textContent = err.message;
         authError.style.color = 'var(--error)';
@@ -76,21 +74,20 @@ async function login(email, password) {
 
 async function register(username, email, password) {
     try {
-        const res = await fetch(`${API_URL}/api/Auth/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, email, password })
+        const { data, error } = await supabase.auth.signUp({
+            email, password,
+            options: { data: { username } }
         });
-        const data = await res.json();
-        if (!res.ok) {
-            let msg = data.message || 'Registration failed';
-            if (data.errors) msg = Object.values(data.errors).flat().join(', ');
-            throw new Error(msg);
+        if (error) throw new Error(error.message);
+        if (data.session) {
+            currentUser = data.user;
+            await initChat();
+        } else {
+            tabLogin.click();
+            authError.textContent = 'Account created! Check your email to confirm, then sign in.';
+            authError.style.color = 'var(--success)';
+            registerForm.reset();
         }
-        tabLogin.click();
-        authError.textContent = 'Account created! Sign in to get started.';
-        authError.style.color = 'var(--success)';
-        registerForm.reset();
     } catch (err) {
         authError.textContent = err.message;
         authError.style.color = 'var(--error)';
@@ -100,70 +97,75 @@ async function register(username, email, password) {
 // ── Chat init ───────────────────────────────────────────────────────────────
 async function initChat() {
     try {
-        const res = await fetch(`${API_URL}/api/Users/me`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!res.ok) throw new Error('Unauthorized');
-        currentUser = await res.json();
+        const { data: profile } = await supabase
+            .from('profiles').select('*').eq('id', currentUser.id).single();
 
+        currentUser.username = profile?.username || currentUser.email;
         document.getElementById('current-username').textContent = currentUser.username;
         document.getElementById('current-username-initial').textContent = getInitial(currentUser.username);
 
         authContainer.classList.add('hidden');
         chatContainer.classList.remove('hidden');
 
-        setupSignalR();
-        await loadAllUsers();
+        setupPresence();
+        setupRealtimeMessages();
+        await loadAllProfiles();
         await Promise.all([loadConnects(), loadRooms(), loadPendingBadge()]);
-    } catch {
-        localStorage.removeItem('chat_token');
+    } catch (err) {
+        console.error('initChat failed', err);
+        await supabase.auth.signOut();
         authContainer.classList.remove('hidden');
         chatContainer.classList.add('hidden');
     }
 }
 
-// ── SignalR ─────────────────────────────────────────────────────────────────
-function setupSignalR() {
-    connection = new signalR.HubConnectionBuilder()
-        .withUrl(`${API_URL}/chatHub`, { accessTokenFactory: () => token })
-        .withAutomaticReconnect()
-        .build();
-
-    connection.on('ReceiveMessage', (message) => {
-        if (message.roomId === activeRoomId) {
-            appendMessage(message);
-            connection.invoke('MarkRoomAsRead', activeRoomId);
-        } else {
-            const roomEl = document.querySelector(`[data-room-id="${message.roomId}"]`);
-            if (roomEl) roomEl.classList.add('has-unread');
-        }
-    });
-
-    connection.on('UserPresenceUpdate', (userId, isOnline) => {
-        document.querySelectorAll(`[data-user-id="${userId}"] .status-dot`).forEach(el => {
-            el.className = `status-dot ${isOnline ? 'online' : 'offline'}`;
+// ── Realtime ─────────────────────────────────────────────────────────────────
+function setupPresence() {
+    const ch = supabase.channel('online-users');
+    ch.on('presence', { event: 'sync' }, () => {
+        const onlineIds = new Set(
+            Object.values(ch.presenceState()).flat().map(p => p.user_id)
+        );
+        document.querySelectorAll('[data-user-id]').forEach(el => {
+            const dot = el.querySelector('.status-dot');
+            if (dot) dot.className = `status-dot ${onlineIds.has(el.dataset.userId) ? 'online' : 'offline'}`;
         });
+    }).subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') await ch.track({ user_id: currentUser.id });
     });
+}
 
-    connection.start()
-        .then(() => console.log('SignalR connected'))
-        .catch(err => console.error(err));
+function setupRealtimeMessages() {
+    supabase.channel('all-messages')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+            const msg = payload.new;
+            if (msg.room_id === activeRoomId) {
+                appendMessage(normalizeMsg(msg));
+                markRoomAsRead(msg.room_id);
+            } else {
+                const roomEl = document.querySelector(`[data-room-id="${msg.room_id}"]`);
+                if (roomEl) roomEl.classList.add('has-unread');
+            }
+        })
+        .subscribe();
 }
 
 // ── Data loaders ────────────────────────────────────────────────────────────
-async function loadAllUsers() {
-    const res = await fetch(`${API_URL}/api/Users`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) allUsers = await res.json();
+async function loadAllProfiles() {
+    const { data } = await supabase.from('profiles').select('*').neq('id', currentUser.id);
+    allProfiles = data || [];
 }
 
 async function loadConnects() {
-    const res = await fetch(`${API_URL}/api/Connections`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) return;
-    myConnects = await res.json();
+    const { data } = await supabase
+        .from('connectionrequests')
+        .select('*, sender:profiles!sender_id(id,username), receiver:profiles!receiver_id(id,username)')
+        .eq('status', 'Accepted')
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
+
+    myConnects = (data || []).map(r =>
+        r.sender_id === currentUser.id ? r.receiver : r.sender
+    ).filter(Boolean);
 
     connectsList.innerHTML = '';
     if (myConnects.length === 0) {
@@ -174,28 +176,44 @@ async function loadConnects() {
 }
 
 async function loadRooms() {
-    const res = await fetch(`${API_URL}/api/ChatRooms`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) return;
-    const rooms = await res.json();
+    const { data: parts } = await supabase
+        .from('roomparticipants')
+        .select('room_id, last_read_at, chatrooms(id,name,type)')
+        .eq('user_id', currentUser.id);
+
+    if (!parts) { roomsList.innerHTML = ''; return; }
+
+    const privateIds = parts.filter(p => p.chatrooms?.type === 'Private').map(p => p.room_id);
+    let otherMap = {};
+    if (privateIds.length > 0) {
+        const { data: others } = await supabase
+            .from('roomparticipants')
+            .select('room_id, user_id, profiles(id,username)')
+            .in('room_id', privateIds)
+            .neq('user_id', currentUser.id);
+        (others || []).forEach(o => { otherMap[o.room_id] = { userId: o.user_id, username: o.profiles?.username }; });
+    }
+
     roomsList.innerHTML = '';
-    rooms.forEach(room => addRoomToChannelsList(room));
+    parts.forEach(p => {
+        const room = p.chatrooms;
+        if (!room) return;
+        const other = room.type === 'Private' ? otherMap[room.id] : null;
+        addRoomToChannelsList({
+            id: room.id, name: room.name, type: room.type,
+            _displayName: other?.username || room.name,
+            _otherUserId: other?.userId || null
+        });
+    });
 }
 
 async function loadPendingBadge() {
-    const res = await fetch(`${API_URL}/api/Connections/pending`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) return;
-    const { received } = await res.json();
-    const count = received.length;
-    if (count > 0) {
-        pendingSection.style.display = '';
-        pendingBadge.textContent = count;
-    } else {
-        pendingSection.style.display = 'none';
-    }
+    const { data } = await supabase
+        .from('connectionrequests').select('id')
+        .eq('receiver_id', currentUser.id).eq('status', 'Pending');
+    const count = data?.length || 0;
+    if (count > 0) { pendingSection.style.display = ''; pendingBadge.textContent = count; }
+    else { pendingSection.style.display = 'none'; }
 }
 
 // ── Build sidebar items ─────────────────────────────────────────────────────
@@ -210,7 +228,7 @@ function buildUserItem(u) {
     avatar.textContent = getInitial(u.username);
 
     const dot = document.createElement('span');
-    dot.className = `status-dot ${u.isOnline ? 'online' : 'offline'}`;
+    dot.className = 'status-dot offline';
     avatar.appendChild(dot);
 
     const info = document.createElement('div');
@@ -228,17 +246,8 @@ function buildUserItem(u) {
 function addRoomToChannelsList(room) {
     if (document.querySelector(`[data-room-id="${room.id}"]`)) return;
 
-    let displayName = room.name;
-    let otherUserId = null;
-
-    if (room.type === 'Private' && room.participants) {
-        const other = room.participants.find(p => p.userId !== currentUser.id);
-        if (other) {
-            otherUserId = other.userId;
-            const u = allUsers.find(u => u.id === otherUserId);
-            if (u) displayName = u.username;
-        }
-    }
+    const displayName = room._displayName || room.name;
+    const otherUserId = room._otherUserId || null;
 
     const item = document.createElement('div');
     item.className = 'room-item';
@@ -262,9 +271,9 @@ function addRoomToChannelsList(room) {
     item.appendChild(avatar);
     item.appendChild(info);
 
-    if (room.type === 'Private' && otherUserId !== null) {
+    if (room.type === 'Private' && otherUserId) {
         item.addEventListener('click', () => startPrivateChat(otherUserId, displayName));
-    } else if (room.type === 'Group') {
+    } else {
         item.addEventListener('click', () => openRoom(room.id, displayName, null));
     }
 
@@ -274,15 +283,28 @@ function addRoomToChannelsList(room) {
 // ── Chat opening ────────────────────────────────────────────────────────────
 async function startPrivateChat(otherUserId, otherUsername) {
     try {
-        const res = await fetch(`${API_URL}/api/ChatRooms/private/${otherUserId}`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const room = await res.json();
-        addRoomToChannelsList(room);
+        const dmKey = [currentUser.id, otherUserId].sort().join(':');
+        const { data: existing } = await supabase
+            .from('chatrooms').select('*').eq('type', 'Private').eq('name', dmKey).maybeSingle();
+
+        if (existing) {
+            addRoomToChannelsList({ ...existing, _displayName: otherUsername, _otherUserId: otherUserId });
+            await openRoom(existing.id, otherUsername, otherUserId);
+            return;
+        }
+
+        const { data: room } = await supabase
+            .from('chatrooms').insert({ name: dmKey, type: 'Private' }).select().single();
+
+        await supabase.from('roomparticipants').insert([
+            { room_id: room.id, user_id: currentUser.id },
+            { room_id: room.id, user_id: otherUserId }
+        ]);
+
+        addRoomToChannelsList({ ...room, _displayName: otherUsername, _otherUserId: otherUserId });
         await openRoom(room.id, otherUsername, otherUserId);
     } catch (err) {
-        console.error('Failed to start chat', err);
+        console.error('startPrivateChat error', err);
     }
 }
 
@@ -299,16 +321,11 @@ async function openRoom(roomId, displayName, otherUserId) {
 
     messagesContainer.innerHTML = '';
 
-    const msgRes = await fetch(`${API_URL}/api/Messages/room/${roomId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const messages = await msgRes.json();
-    messages.reverse().forEach(appendMessage);
+    const { data: messages } = await supabase
+        .from('messages').select('*').eq('room_id', roomId).order('sent_at', { ascending: true });
 
-    if (connection.state === 'Connected') {
-        await connection.invoke('JoinRoom', roomId);
-        await connection.invoke('MarkRoomAsRead', roomId);
-    }
+    (messages || []).forEach(msg => appendMessage(normalizeMsg(msg)));
+    await markRoomAsRead(roomId);
 
     document.querySelectorAll('.user-item, .room-item').forEach(el => el.classList.remove('active'));
     if (otherUserId) {
@@ -317,6 +334,16 @@ async function openRoom(roomId, displayName, otherUserId) {
     }
     const roomEl = document.querySelector(`[data-room-id="${roomId}"]`);
     if (roomEl) { roomEl.classList.add('active'); roomEl.classList.remove('has-unread'); }
+}
+
+async function markRoomAsRead(roomId) {
+    await supabase.from('roomparticipants')
+        .update({ last_read_at: new Date().toISOString() })
+        .eq('room_id', roomId).eq('user_id', currentUser.id);
+}
+
+function normalizeMsg(raw) {
+    return { senderId: raw.sender_id, content: raw.content, sentAt: raw.sent_at, roomId: raw.room_id };
 }
 
 // ── Message rendering ───────────────────────────────────────────────────────
@@ -370,18 +397,22 @@ async function refreshDiscoverList() {
     const list = document.getElementById('discover-list');
     list.innerHTML = '<div class="empty-section">Loading…</div>';
 
-    const res = await fetch(`${API_URL}/api/Connections/discover`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const users = res.ok ? await res.json() : [];
-    list.innerHTML = '';
+    const { data: myConns } = await supabase
+        .from('connectionrequests').select('sender_id, receiver_id')
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
 
-    if (users.length === 0) {
+    const connectedIds = new Set(
+        (myConns || []).flatMap(c => [c.sender_id, c.receiver_id]).filter(id => id !== currentUser.id)
+    );
+    const discoverable = allProfiles.filter(p => !connectedIds.has(p.id));
+
+    list.innerHTML = '';
+    if (discoverable.length === 0) {
         list.innerHTML = '<div class="empty-section">No new people to discover.</div>';
         return;
     }
 
-    users.forEach(u => {
+    discoverable.forEach(u => {
         const row = document.createElement('div');
         row.className = 'discover-item';
         row.dataset.name = u.username.toLowerCase();
@@ -404,16 +435,10 @@ async function refreshDiscoverList() {
         btn.addEventListener('click', async () => {
             btn.disabled = true;
             btn.textContent = 'Sending…';
-            const r = await fetch(`${API_URL}/api/Connections/send/${u.id}`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
+            const { error } = await supabase.from('connectionrequests').insert({
+                sender_id: currentUser.id, receiver_id: u.id
             });
-            if (r.ok) {
-                btn.textContent = 'Sent ✓';
-            } else {
-                const d = await r.json();
-                btn.textContent = d.status === 'Accepted' ? 'Connected' : 'Pending';
-            }
+            btn.textContent = error ? 'Error' : 'Sent ✓';
         });
 
         row.appendChild(avatar);
@@ -440,11 +465,14 @@ document.querySelectorAll('.modal-tab').forEach(tab => {
 });
 
 async function refreshPendingModal() {
-    const res = await fetch(`${API_URL}/api/Connections/pending`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) return;
-    const { received, sent } = await res.json();
+    const { data } = await supabase
+        .from('connectionrequests')
+        .select('*, sender:profiles!sender_id(id,username), receiver:profiles!receiver_id(id,username)')
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+        .eq('status', 'Pending');
+
+    const received = (data || []).filter(r => r.receiver_id === currentUser.id);
+    const sent = (data || []).filter(r => r.sender_id === currentUser.id);
 
     const recList = document.getElementById('pending-received-list');
     const sentList = document.getElementById('pending-sent-list');
@@ -459,15 +487,15 @@ async function refreshPendingModal() {
             row.className = 'pending-item';
 
             const avatar = document.createElement('div');
-            avatar.className = `user-avatar ${getAvatarColor(r.senderId)}`;
-            avatar.textContent = getInitial(r.senderUsername);
+            avatar.className = `user-avatar ${getAvatarColor(r.sender_id)}`;
+            avatar.textContent = getInitial(r.sender?.username);
             avatar.style.cssText = 'width:32px;height:32px;flex-shrink:0';
 
             const info = document.createElement('div');
             info.style.flex = '1';
             const name = document.createElement('div');
             name.className = 'pending-item-name';
-            name.textContent = r.senderUsername;
+            name.textContent = r.sender?.username || 'Unknown';
             info.appendChild(name);
 
             const acceptBtn = document.createElement('button');
@@ -475,10 +503,7 @@ async function refreshPendingModal() {
             acceptBtn.textContent = 'Accept';
             acceptBtn.style.marginRight = '0.375rem';
             acceptBtn.addEventListener('click', async () => {
-                await fetch(`${API_URL}/api/Connections/${r.id}/accept`, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                await supabase.from('connectionrequests').update({ status: 'Accepted' }).eq('id', r.id);
                 row.remove();
                 await loadConnects();
                 await loadPendingBadge();
@@ -488,10 +513,7 @@ async function refreshPendingModal() {
             rejectBtn.className = 'btn-sm btn-sm-danger';
             rejectBtn.textContent = 'Decline';
             rejectBtn.addEventListener('click', async () => {
-                await fetch(`${API_URL}/api/Connections/${r.id}/reject`, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                await supabase.from('connectionrequests').update({ status: 'Rejected' }).eq('id', r.id);
                 row.remove();
                 await loadPendingBadge();
             });
@@ -512,15 +534,15 @@ async function refreshPendingModal() {
             row.className = 'pending-item';
 
             const avatar = document.createElement('div');
-            avatar.className = `user-avatar ${getAvatarColor(r.receiverId)}`;
-            avatar.textContent = getInitial(r.receiverUsername);
+            avatar.className = `user-avatar ${getAvatarColor(r.receiver_id)}`;
+            avatar.textContent = getInitial(r.receiver?.username);
             avatar.style.cssText = 'width:32px;height:32px;flex-shrink:0';
 
             const info = document.createElement('div');
             info.style.flex = '1';
             const name = document.createElement('div');
             name.className = 'pending-item-name';
-            name.textContent = r.receiverUsername;
+            name.textContent = r.receiver?.username || 'Unknown';
             const sub = document.createElement('div');
             sub.className = 'pending-item-sub';
             sub.textContent = 'Awaiting response…';
@@ -579,24 +601,19 @@ document.getElementById('create-channel-submit').addEventListener('click', async
     const checked = [...document.querySelectorAll('#channel-members-list input[type=checkbox]:checked')];
     if (checked.length === 0) { errorEl.textContent = 'Select at least one connect.'; return; }
 
-    const memberIds = checked.map(cb => parseInt(cb.value));
-    const res = await fetch(`${API_URL}/api/ChatRooms/group`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ name, memberIds })
-    });
+    const memberIds = checked.map(cb => cb.value);
 
-    if (!res.ok) {
-        const d = await res.json();
-        errorEl.textContent = d.message || 'Failed to create channel.';
-        return;
-    }
+    const { data: room, error } = await supabase
+        .from('chatrooms').insert({ name, type: 'Group' }).select().single();
 
-    const room = await res.json();
-    addRoomToChannelsList(room);
+    if (error) { errorEl.textContent = error.message; return; }
+
+    await supabase.from('roomparticipants').insert([
+        { room_id: room.id, user_id: currentUser.id },
+        ...memberIds.map(uid => ({ room_id: room.id, user_id: uid }))
+    ]);
+
+    addRoomToChannelsList({ ...room, _displayName: room.name, _otherUserId: null });
     closeModal('modal-create-channel');
     await openRoom(room.id, room.name, null);
 });
@@ -620,18 +637,22 @@ messageForm.onsubmit = async (e) => {
     e.preventDefault();
     const content = messageInput.value.trim();
     if (!content || !activeRoomId) return;
-    try {
-        await connection.invoke('SendMessage', activeRoomId, content);
-        messageInput.value = '';
-    } catch (err) {
-        console.error(err);
-    }
+    const { error } = await supabase.from('messages').insert({
+        room_id: activeRoomId, sender_id: currentUser.id, content
+    });
+    if (!error) messageInput.value = '';
 };
 
-document.getElementById('logout-btn').onclick = () => {
-    localStorage.removeItem('chat_token');
+document.getElementById('logout-btn').onclick = async () => {
+    await supabase.auth.signOut();
     location.reload();
 };
 
 // ── Auto-init ───────────────────────────────────────────────────────────────
-if (token) initChat();
+(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+        currentUser = session.user;
+        await initChat();
+    }
+})();

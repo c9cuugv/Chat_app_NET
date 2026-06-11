@@ -1,4 +1,4 @@
-const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
 let currentUser = null;
 let activeRoomId = null;
@@ -62,7 +62,7 @@ tabRegister.onclick = () => {
 // ── Auth functions ──────────────────────────────────────────────────────────
 async function login(email, password) {
     try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
         if (error) throw new Error(error.message);
         currentUser = data.user;
         await initChat();
@@ -74,7 +74,7 @@ async function login(email, password) {
 
 async function register(username, email, password) {
     try {
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await sb.auth.signUp({
             email, password,
             options: { data: { username } }
         });
@@ -113,7 +113,7 @@ async function initChat() {
         await Promise.all([loadConnects(), loadRooms(), loadPendingBadge()]);
     } catch (err) {
         console.error('initChat failed', err);
-        await supabase.auth.signOut();
+        await sb.auth.signOut();
         authContainer.classList.remove('hidden');
         chatContainer.classList.add('hidden');
     }
@@ -121,7 +121,7 @@ async function initChat() {
 
 // ── Realtime ─────────────────────────────────────────────────────────────────
 function setupPresence() {
-    const ch = supabase.channel('online-users');
+    const ch = sb.channel('online-users');
     ch.on('presence', { event: 'sync' }, () => {
         const onlineIds = new Set(
             Object.values(ch.presenceState()).flat().map(p => p.user_id)
@@ -136,7 +136,7 @@ function setupPresence() {
 }
 
 function setupRealtimeMessages() {
-    supabase.channel('all-messages')
+    sb.channel('all-messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
             const msg = payload.new;
             if (msg.room_id === activeRoomId) {
@@ -152,7 +152,7 @@ function setupRealtimeMessages() {
 
 // ── Data loaders ────────────────────────────────────────────────────────────
 async function loadAllProfiles() {
-    const { data } = await supabase.from('profiles').select('*').neq('id', currentUser.id);
+    const { data } = await sb.from('profiles').select('*').neq('id', currentUser.id);
     allProfiles = data || [];
 }
 
@@ -296,7 +296,7 @@ async function startPrivateChat(otherUserId, otherUsername) {
         const { data: room } = await supabase
             .from('chatrooms').insert({ name: dmKey, type: 'Private' }).select().single();
 
-        await supabase.from('roomparticipants').insert([
+        await sb.from('roomparticipants').insert([
             { room_id: room.id, user_id: currentUser.id },
             { room_id: room.id, user_id: otherUserId }
         ]);
@@ -337,7 +337,7 @@ async function openRoom(roomId, displayName, otherUserId) {
 }
 
 async function markRoomAsRead(roomId) {
-    await supabase.from('roomparticipants')
+    await sb.from('roomparticipants')
         .update({ last_read_at: new Date().toISOString() })
         .eq('room_id', roomId).eq('user_id', currentUser.id);
 }
@@ -435,7 +435,7 @@ async function refreshDiscoverList() {
         btn.addEventListener('click', async () => {
             btn.disabled = true;
             btn.textContent = 'Sending…';
-            const { error } = await supabase.from('connectionrequests').insert({
+            const { error } = await sb.from('connectionrequests').insert({
                 sender_id: currentUser.id, receiver_id: u.id
             });
             btn.textContent = error ? 'Error' : 'Sent ✓';
@@ -503,7 +503,7 @@ async function refreshPendingModal() {
             acceptBtn.textContent = 'Accept';
             acceptBtn.style.marginRight = '0.375rem';
             acceptBtn.addEventListener('click', async () => {
-                await supabase.from('connectionrequests').update({ status: 'Accepted' }).eq('id', r.id);
+                await sb.from('connectionrequests').update({ status: 'Accepted' }).eq('id', r.id);
                 row.remove();
                 await loadConnects();
                 await loadPendingBadge();
@@ -513,7 +513,7 @@ async function refreshPendingModal() {
             rejectBtn.className = 'btn-sm btn-sm-danger';
             rejectBtn.textContent = 'Decline';
             rejectBtn.addEventListener('click', async () => {
-                await supabase.from('connectionrequests').update({ status: 'Rejected' }).eq('id', r.id);
+                await sb.from('connectionrequests').update({ status: 'Rejected' }).eq('id', r.id);
                 row.remove();
                 await loadPendingBadge();
             });
@@ -608,7 +608,7 @@ document.getElementById('create-channel-submit').addEventListener('click', async
 
     if (error) { errorEl.textContent = error.message; return; }
 
-    await supabase.from('roomparticipants').insert([
+    await sb.from('roomparticipants').insert([
         { room_id: room.id, user_id: currentUser.id },
         ...memberIds.map(uid => ({ room_id: room.id, user_id: uid }))
     ]);
@@ -637,20 +637,20 @@ messageForm.onsubmit = async (e) => {
     e.preventDefault();
     const content = messageInput.value.trim();
     if (!content || !activeRoomId) return;
-    const { error } = await supabase.from('messages').insert({
+    const { error } = await sb.from('messages').insert({
         room_id: activeRoomId, sender_id: currentUser.id, content
     });
     if (!error) messageInput.value = '';
 };
 
 document.getElementById('logout-btn').onclick = async () => {
-    await supabase.auth.signOut();
+    await sb.auth.signOut();
     location.reload();
 };
 
 // ── Auto-init ───────────────────────────────────────────────────────────────
 (async () => {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await sb.auth.getSession();
     if (session) {
         currentUser = session.user;
         await initChat();
